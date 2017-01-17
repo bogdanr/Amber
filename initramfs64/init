@@ -1,0 +1,21 @@
+#!/bin/sh
+# Initial script for NimbleX embedded
+
+export PATH=.:/:/usr/sbin:/usr/bin:/sbin:/bin
+
+. amberlib
+
+transfer_initramfs
+
+header "Starting NimbleX embedded"
+
+init_proc_sysfs
+
+debug_start
+                                                                                                                                                       debug_shell
+ip addr show dev eth0 | grep inet
+free -m | head -2
+
+/run_app
+
+header "!!ERROR occured, you shouldn't be here.!!"

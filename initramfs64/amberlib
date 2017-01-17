@@ -1,0 +1,259 @@
+#!/bin/sh
+
+# Functions library :: for NimbleX Embedded
+# Author: Bogdan Radulescu <bogdan@nimblex.net>
+#
+
+# =================================================================
+# debug and output functions
+# =================================================================
+
+debug_start()
+{
+   if grep -q debug /proc/cmdline; then
+      DEBUG_IS_ENABLED=1
+   else
+      DEBUG_IS_ENABLED=
+   fi
+}
+
+debug_log()
+{
+   if [ "$DEBUG_IS_ENABLED" ]; then
+      echo "- debug: $*" >&2
+      log "- debug: $*"
+   fi
+}
+
+# header
+# $1 = text to show
+#
+header()
+{
+   echo "[0;1m""$@""[0;0m"
+}
+
+
+# echo green star
+#
+echo_green_star()
+{
+   echo -ne "[0;32m""* ""[0;39m"
+}
+
+echo_red_line()
+{
+   echo -ne "[1;31m""| ""[0;0m"
+}
+
+# log - store given text in /var/log/livedbg
+log()
+{
+   echo "$@" 2>/dev/null >>/var/log/livedbg
+}
+
+echolog()
+{
+   echo "$@"
+   log "$@"
+}
+
+# show information about the debug shell
+show_debug_banner()
+{
+   echo
+   echo "====="
+   echo ": Debugging started. Type commands or hit Ctrl+D to continue."
+   echo
+}
+
+# debug_shell
+# executed when debug boot parameter is present
+#
+debug_shell()
+{
+   if [ "$DEBUG_IS_ENABLED" ]; then
+      show_debug_banner
+      setsid sh -c 'exec sh < /dev/tty1 >/dev/tty1 2>&1'
+      echo
+   fi
+}
+
+fatal()
+{
+   echolog
+   header "Fatal error occured - $1"
+   echolog "Something went wrong and we can't continue. This should never happen."
+   echolog "Please reboot your computer with Ctrl+Alt+Delete ..."
+   echolog
+   setsid sh -c 'exec sh < /dev/tty1 >/dev/tty1 2>&1'
+}
+
+# get value of commandline parameter $1
+# $1 = parameter to search for
+#
+cmdline_value()
+{
+   cat /proc/cmdline | egrep -o "(^|[[:space:]])$1=[^[:space:]]+" | tr -d " " | cut -d "=" -f 2- | tail -n 1
+}
+
+
+# test if the script is started by root user. If not, exit
+#
+allow_only_root()
+{
+  if [ "0$UID" -ne 0 ]; then
+     echo "Only root can run $(basename $0)"; exit 1
+  fi
+}
+
+
+# Move entire initramfs tree to tmpfs mount.
+# It's a bit tricky but is necessray to enable pivot_root
+# even for initramfs boot image
+#
+transfer_initramfs()
+{
+   if [ ! -r /lib/initramfs_escaped ]; then
+      # echo "switch root from initramfs to ramfs"
+      SWITCH=/m # one letter directory
+      mkdir -p $SWITCH
+      mount -t tmpfs -o size="100%" tmpfs $SWITCH
+      cp -a /??* $SWITCH 2>/dev/null # only copy two-and-more-letter directories
+      cd $SWITCH
+      echo "This file indicates that we successfully escaped initramfs" > $SWITCH/lib/initramfs_escaped
+      exec switch_root -c /dev/console . $0
+   fi
+}
+
+# mount virtual filesystems like proc etc
+#
+init_proc_sysfs()
+{
+   debug_log "init_proc_sysfs" "$*"
+   mkdir -p /proc /sys /etc $MEMORY
+   mount -n -t proc proc /proc
+   echo "0" >/proc/sys/kernel/printk
+   mount -n -t sysfs sysfs /sys
+   mount -n -o remount,rw rootfs /
+   ln -sf /proc/mounts /etc/mtab
+}
+
+# make sure some devices are there
+init_devs()
+{
+   debug_log "init_devs" "$*"
+   echo /sbin/mdev > /proc/sys/kernel/hotplug
+   mdev -s
+   modprobe zram 2>/dev/null
+   modprobe loop 2>/dev/null
+   modprobe squashfs 2>/dev/null
+   modprobe fuse 2>/dev/null
+}
+
+# Activate zram (auto-compression of RAM)
+# Compressed RAM consumes 1/2 or even 1/4 of original size
+# Setup static size of 500MB
+#
+init_zram()
+{
+   debug_log "init_zram" "$*"
+   echo_red_line
+   echo "Setting dynamic RAM compression using ZRAM"
+   echo 536870912 > /sys/block/zram0/disksize # 512MB
+   mkswap /dev/zram0 >/dev/null
+   swapon /dev/zram0 -p 32767
+   echo 100 > /proc/sys/vm/swappiness
+}
+
+# Return device mounted for given directory
+# $1 = directory
+#
+mounted_device()
+{
+   debug_log "mounted_device" "$*"
+
+   local MNT TARGET
+   MNT="$1"
+   while [ "$MNT" != "/" -a "$MNT" != "." -a "$MNT" != "" ]; do
+      TARGET="$(grep -F " $MNT " /proc/mounts | cut -d " " -f 1)"
+      if [ "$TARGET" != "" ]; then
+         echo "$TARGET"
+         return
+      fi
+      MNT="$(dirname "$MNT")"
+   done
+}
+
+# Return mounted dir for given directory
+# $1 = directory
+#
+mounted_dir()
+{
+   debug_log "mounted_dir" "$*"
+
+   local MNT
+   MNT="$1"
+   while [ "$MNT" != "/" -a "$MNT" != "." -a "$MNT" != "" ]; do
+      if mountpoint -q "$MNT" 2>/dev/null; then
+         echo "$MNT"
+         return
+      fi
+      MNT="$(dirname "$MNT")"
+   done
+}
+
+
+# Create empty fstab properly
+# $1 = root directory
+#
+fstab_create()
+{
+   debug_log "fstab_create" "$*"
+
+   local FSTAB
+   FSTAB="$1/etc/fstab"
+   echo aufs / aufs defaults 0 0 > $FSTAB
+   echo proc /proc proc defaults 0 0 >> $FSTAB
+   echo sysfs /sys sysfs defaults 0 0 >> $FSTAB
+   echo devpts /dev/pts devpts gid=5,mode=620 0 0 >> $FSTAB
+   echo tmpfs /dev/shm tmpfs defaults 0 0 >> $FSTAB
+}
+
+
+# Change root and execute init
+# $1 = where to change root
+#
+change_root()
+{
+   debug_log "change_root" "$*"
+
+   umount /proc
+   umount /sys
+
+   cd "$1"
+
+   # make sure important device files and directories are in union
+   mkdir -p boot dev proc sys tmp mnt run
+   chmod 1777 tmp
+   if [ ! -e dev/console ]; then mknod dev/console c 5 1; fi
+   if [ ! -e dev/tty ]; then mknod dev/tty c 5 0; fi
+   if [ ! -e dev/tty0 ]; then mknod dev/tty0 c 4 0; fi
+   if [ ! -e dev/tty1 ]; then mknod dev/tty1 c 4 1; fi
+   if [ ! -e dev/null ]; then mknod dev/null c 1 3; fi
+   if [ ! -e sbin/fsck.aufs ]; then ln -s /bin/true sbin/fsck.aufs; fi
+
+   # find chroot and init
+   if [ -x bin/chroot ]; then  CHROOT=bin/chroot; fi
+   if [ -x usr/bin/chroot ]; then  CHROOT=usr/bin/chroot; fi
+   if [ "$CHROOT" = "" ]; then fatal "Can't find executable chroot command"; fi
+
+   if [ -x bin/init ]; then INIT=bin/init; fi
+   if [ -x lib/systemd/systemd ]; then INIT=lib/systemd/systemd; fi
+   if [ "$INIT" = "" ]; then fatal "Can't find executable init command"; fi
+
+   mkdir -p mnt/live
+   mount -n -o remount,ro aufs .
+   pivot_root . mnt/live
+   exec $CHROOT . $INIT < dev/console > dev/console 2>&1
+}

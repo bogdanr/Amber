@@ -1,0 +1,67 @@
+<domain type='kvm'>
+  <name>RedisKernel</name>
+  <uuid>dcd08679-2d19-4b16-a43c-fdf32625da10</uuid>
+  <memory unit='KiB'>2097152</memory>
+  <currentMemory unit='KiB'>1048576</currentMemory>
+  <vcpu placement='static'>4</vcpu>
+  <os>
+    <type arch='x86_64' machine='pc-i440fx-2.8'>hvm</type>
+    <kernel>/mnt/sda1/KernelOS/redisKernel</kernel>
+    <cmdline>ip=192.168.122.10::192.168.122.1:255.255.255.0:peleu:eth0:off:8.8.8.8 vga=5 quiet</cmdline>
+    <boot dev='hd'/>
+  </os>
+  <features>
+    <acpi/>
+    <apic/>
+    <vmport state='off'/>
+  </features>
+  <cpu mode='host-model'>
+    <model fallback='allow'/>
+  </cpu>
+  <clock offset='utc'>
+    <timer name='rtc' tickpolicy='catchup'/>
+    <timer name='pit' tickpolicy='delay'/>
+    <timer name='hpet' present='no'/>
+  </clock>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>restart</on_crash>
+  <pm>
+    <suspend-to-mem enabled='no'/>
+    <suspend-to-disk enabled='no'/>
+  </pm>
+  <devices>
+    <emulator>/usr/bin/qemu-kvm</emulator>
+    <controller type='pci' index='0' model='pci-root'/>
+    <controller type='virtio-serial' index='0'>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x04' function='0x0'/>
+    </controller>
+    <interface type='network'>
+      <mac address='52:54:00:ba:10:25'/>
+      <source network='default'/>
+      <model type='virtio'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x03' function='0x0'/>
+    </interface>
+    <serial type='pty'>
+      <target port='0'/>
+    </serial>
+    <console type='pty'>
+      <target type='serial' port='0'/>
+    </console>
+    <channel type='spicevmc'>
+      <target type='virtio' name='com.redhat.spice.0'/>
+      <address type='virtio-serial' controller='0' bus='0' port='1'/>
+    </channel>
+    <graphics type='spice' autoport='yes'>
+      <listen type='address'/>
+      <image compression='off'/>
+    </graphics>
+    <video>
+      <model type='virtio' heads='1' primary='yes'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x02' function='0x0'/>
+    </video>
+    <memballoon model='virtio'>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x05' function='0x0'/>
+    </memballoon>
+  </devices>
+</domain>

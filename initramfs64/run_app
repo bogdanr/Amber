@@ -1,0 +1,8 @@
+#!/bin/sh
+# Make Redis happy
+echo 512 > /proc/sys/net/core/somaxconn
+echo 1 > /proc/sys/vm/overcommit_memory
+ulimit -n 10240
+
+/usr/bin/redis-server /etc/redis.conf
+
