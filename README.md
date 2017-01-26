@@ -9,7 +9,7 @@ Since it's not possible to login inside the VM, or edit it's contents in anyway 
 Currently we have the following AmberApps:
 
 + AmberRedis	- 3.7MB
-+ AmberMemcached	- ? MB
++ AmberMemcached	- 3.3 MB
 
 # F.A.Q.
 
